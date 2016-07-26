@@ -24,6 +24,7 @@ alt_alleles_for_SNP_consideration = 2
 
 # Sliding window parameters
 window_size = 10
+
 #permissible_ratio_count_in_window = 8 # default for most samples
 permissible_ratio_count_in_window = 7 # for ot266, ot641, ot789
 
