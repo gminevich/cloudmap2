@@ -573,14 +573,16 @@ if __name__ == "__main__":
         description='Map a causal variant and plot linkage evidence.'
     )
     parser.add_argument('Homozygous_Parental_file', nargs='?',
-                        metavar='<bulked segregants vcf>',
+                        metavar='<non mapping strain vcf>',
                         default=Parental_default,
-                        help='VCF file with SNPs found '
-                             'in the bulked segregants sample')
+                        help='VCF file with SNPs that appear homozygous '
+                             'in the bulked segregants sample, but are '
+                             'NOT found in the mapping strain.')
     parser.add_argument('HA_SNPs_file', nargs='?',
                         metavar='<mapping strain vcf>',
                         default=HA_default,
-                        help='VCF file with SNPs found in the mapping strain')
+                        help='VCF file with SNPs found in the mapping strain '
+                             'AND in the bulked segregants sample.')
     parser.add_argument('-o', '--ofile', required=True,
                         help="output file for the plot")
     args = vars(parser.parse_args())
