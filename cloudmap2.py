@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 
-from scipy.stats import kde
+import collections
+import argparse
+
+from itertools import islice
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tkr
+
+from scipy.stats import kde
 from matplotlib.backends.backend_pdf import PdfPages
 
-plt.style.use('ggplot') # http://stackoverflow.com/questions/33995707/attributeerror-unknown-property-color-cycle
 
-import collections
-from itertools import islice
 # This has automatic bandwidth determination: http://docs.scipy.org/doc/scipy-0.15.1/reference/generated/scipy.stats.gaussian_kde.html
 # Bottom of page has methods that can be applied to the probability density function
 # Great reference comparing the KDE packages and why Scipy is the best (b/c less than 500pts, 1D): http://jakevdp.github.io/blog/2013/12/01/kernel-density-estimation/
@@ -37,27 +40,18 @@ causal_chromosome_flag = 'chrX'
 # for purposes of making plots for paper figures, can label the known causal variant
 #causal_variant_position = '7534526'
 
-mapping_plot_path = '/Users/gregory/cloudmap2/CloudMap2.pdf'
-
-# hu80 (chrIII cic-1)
-#HA_SNPs_file = '/Users/gregory/cloudmap2/Galaxy114-[hu80HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
-#Homozygous_Parental_file = '/Users/gregory/cloudmap2/Galaxy117-[hu80HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
-
-# ot785 (chrIII lin-13)
-HA_SNPs_file = '/Users/gregory/cloudmap2/Galaxy45-[ot785HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
-Homozygous_Parental_file = '/Users/gregory/cloudmap2/Galaxy40-[ot785HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
-
 max_x = 0
 max_y = 0
 
 
-def main():
+def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
     # ToDo: convert all hardcoded options to command line parameters
 
-    mapping_plot_pdf, fig = initiate_plot()
+    mapping_plot_pdf, fig = initiate_plot(ofile)
 
     # Call all functions and loop through all chromosomes. 
     mapping_strain_positions_df = parse_mapping_strain_positions_df(load_vcf_as_df(HA_SNPs_file))
+    parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Parental_file)    
     #ToDo generalize this to handle all the different formats of chromosome names. 
     all_chromosomes = pd.unique(mapping_strain_positions_df.CHROM.ravel()) 
     # Remove MtDNA from ndarray, right now only do it by index, but should likely also plot MTDNA since there could be causal mutations there.
@@ -70,7 +64,10 @@ def main():
         # Get longest region of linkage on each chromosome
         max_window_start, max_window_end = longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions_df, chrom)
         # Get parental strain SNPs in longest mapping region on each chromosome
-        parental_strain_SNPs_in_longest_mapping_region = parental_strain_variants_in_longest_non_crossing_strain_subsegment(max_window_start, max_window_end, chrom)
+        parental_strain_SNPs_in_longest_mapping_region = parental_strain_variants_in_longest_non_crossing_strain_subsegment(
+            parental_homozygous_snps_df,
+            max_window_start, max_window_end, chrom
+        )
         # Calculate KDE on the parental strain SNPs within the mapping region
         if len(parental_strain_SNPs_in_longest_mapping_region.index) >= 3:
             kde_max_y, kde_max_x, xgrid, probablity_density_function = kernel_density_estimation(parental_strain_SNPs_in_longest_mapping_region, chrom)
@@ -84,9 +81,16 @@ def main():
     finish_plot(mapping_plot_pdf, fig)
         
         
-def initiate_plot():
-    """Set up plotting parameters: http://blog.marmakoide.org/?p=94 http://matplotlib.org/users/gridspec.html"""
-    mapping_plot_pdf = PdfPages(mapping_plot_path)
+def initiate_plot(ofile):
+    """Set up plotting parameters."""
+
+    # compare:
+    # http://blog.marmakoide.org/?p=94 and
+    # http://matplotlib.org/users/gridspec.html
+
+    # http://stackoverflow.com/questions/33995707/attributeerror-unknown-property-color-cycle
+    plt.style.use('ggplot')
+    mapping_plot_pdf = PdfPages(ofile)
     # http://matplotlib.org/api/figure_api.html
     fig = plt.figure(figsize=(11.69, 8.27), dpi=150)  
     return mapping_plot_pdf, fig
@@ -110,7 +114,7 @@ def finish_plot(mapping_plot_pdf=None, fig=None):
     mapping_plot_pdf.close()
 
 
-def load_vcf_as_df(vcf_file = None):
+def load_vcf_as_df(vcf_file):
     """ Reads in a VCF, and converts key columns to a dataframe """
     vcf_as_df = pd.read_csv(vcf_file, header='infer', comment='#', sep='\t')
     vcf_as_df.columns = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER',  'INFO', 'FORMAT', 'SAMPLE']
@@ -201,9 +205,12 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
     return max_window_start, max_window_end
 
 
-def parental_strain_variants_in_longest_non_crossing_strain_subsegment(start_largest_consecutive=None, end_largest_consecutive=None, current_chrom=None):
-    """ Identifies parental strain variants in the longest region devoid of crossing strain snps """
-    parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Parental_file)    
+def parental_strain_variants_in_longest_non_crossing_strain_subsegment(
+    parental_homozygous_snps_df,
+    start_largest_consecutive=None, end_largest_consecutive=None,
+    current_chrom=None
+    ):
+    """Identifies parental strain variants in the longest region devoid of crossing strain snps """    
     
     # Split SAMPLE Column with each field as a new column
     parental_homozygous_snps_read_group_data = parental_homozygous_snps_df.SAMPLE.str.split(':')
@@ -369,4 +376,26 @@ def kernel_density_estimation(parental_strain_SNPs_in_longest_mapping_region=Non
 
 
 if __name__ == "__main__":
-	main()
+    # hu80 (chrIII cic-1)
+    #HA_default = '/Users/gregory/cloudmap2/Galaxy114-[hu80HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
+    #Parental_default = '/Users/gregory/cloudmap2/Galaxy117-[hu80HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
+
+    # ot785 (chrIII lin-13)
+    HA_default = '/Users/gregory/cloudmap2/Galaxy45-[ot785HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
+    Parental_default = '/Users/gregory/cloudmap2/Galaxy40-[ot785HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
+
+    parser = argparse.ArgumentParser(
+        description='Map a causal variant and plot linkage evidence.'
+    )
+    parser.add_argument('Homozygous_Parental_file', nargs='?',
+                        metavar='<bulked segregants vcf>',
+                        default=Parental_default,
+                        help='VCF file with SNPs found in the bulked segregants sample')
+    parser.add_argument('HA_SNPs_file', nargs='?',
+                        metavar='<mapping strain vcf>',
+                        default=HA_default,
+                        help='VCF file with SNPs found in the mapping strain')
+    parser.add_argument('-o', '--ofile', required=True,
+                        help="output file for the plot")
+    args = vars(parser.parse_args())
+    main(**args)
