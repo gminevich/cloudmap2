@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import collections
 import argparse
 
+from collections import OrderedDict
 from itertools import islice
 
 import numpy as np
@@ -60,10 +60,10 @@ max_y = 0
 def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
     # ToDo: convert all hardcoded options to command line parameters
 
-    mapping_plot_pdf, fig = initiate_plot(ofile)
-
     # Call all functions and loop through all chromosomes. 
-    mapping_strain_positions_df = parse_mapping_strain_positions_df(load_vcf_as_df(HA_SNPs_file))
+    mapping_strain_positions_df = parse_mapping_strain_positions_df(
+        load_vcf_as_df(HA_SNPs_file)
+        )
     parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Parental_file)    
     # ToDo: generalize this to handle all the different formats of chromosome
     # names. 
@@ -72,22 +72,30 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
     # likely also plot MTDNA since there could be causal mutations there.
     all_chromosomes = np.delete(all_chromosomes, 4)
 
+    mapping_plot_pdf, fig = initiate_plot(ofile)
+
     for chrom in all_chromosomes:
         # Debug
         print ("--------------------------------")
         print ("chrom: ", chrom)
         # Get longest region of linkage on each chromosome
-        max_window_start, max_window_end = longest_region_of_parental_linkage_via_mapping_snps(
-            mapping_strain_positions_df, chrom
-            )
+        max_window_start, max_window_end = \
+            longest_region_of_parental_linkage_via_mapping_snps(
+                mapping_strain_positions_df, chrom
+                )
         # Get parental strain SNPs in longest mapping region on each chromosome
-        parental_strain_SNPs_in_longest_mapping_region = parental_strain_variants_in_longest_non_crossing_strain_subsegment(
-            parental_homozygous_snps_df,
-            max_window_start, max_window_end, chrom
-            )
+        parental_strain_SNPs_in_longest_mapping_region = \
+            parental_strain_variants_in_longest_non_crossing_strain_subsegment(
+                parental_homozygous_snps_df,
+                max_window_start, max_window_end, chrom
+                )
         # Calculate KDE on the parental strain SNPs within the mapping region
         if len(parental_strain_SNPs_in_longest_mapping_region.index) >= 3:
-            kde_max_y, kde_max_x, xgrid, probablity_density_function = kernel_density_estimation(parental_strain_SNPs_in_longest_mapping_region, chrom)
+            kde_max_y, kde_max_x, xgrid, probablity_density_function = \
+                kernel_density_estimation(
+                    parental_strain_SNPs_in_longest_mapping_region,
+                    chrom
+                    )
             kde_output_plot(
                 xgrid, probablity_density_function,
                 chrom, parental_strain_SNPs_in_longest_mapping_region,
@@ -205,7 +213,7 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
     # Build the dict
     POS_ratio_dict = dict(zip(POS_ratio_DF.POS, POS_ratio_DF.ratio))
     # Sort the dict
-    POS_ratio_dict_sorted = collections.OrderedDict(sorted(POS_ratio_dict.items()))
+    POS_ratio_dict_sorted = OrderedDict(sorted(POS_ratio_dict.items()))
     
     current_run_windows_start = 0
     current_run_windows_end = 0
@@ -215,60 +223,48 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
     # the last/rightmost position in the window that ends the longest interval
     # below threshold
     max_window_end = 0 
-    current_window_start = 0
-    current_window_end = 0
     consecutive_windows_below_threshold = 0
     max_consecutive_windows_below_threshold = 0
     # evaluate contents of each window
-    for window in sliding_window(POS_ratio_dict_sorted, window_size):
+    for window in sliding_window(POS_ratio_dict_sorted.items(), window_size):
         ratio_count_in_window = 0
-        window_position = 0 
-    
-        for _ in list(window):
+        # store POS info of first element of window
+        current_window_start = window[0][0]
+        for pos, ratio in window:
             # Discounts cases where parental mutations(EMS or random) exactly
             # match at an HA position, count this as a 0 ratio
             if (consecutive_windows_below_threshold > 0) \
-               & (POS_ratio_dict_sorted[list(window)[window_position]]
-                  > spurious_mapping_snp_position_ratio_threshold): 
+               & (ratio > spurious_mapping_snp_position_ratio_threshold): 
                 ratio_count_in_window += 1
-            if POS_ratio_dict_sorted[list(window)[window_position]] <.1:
+            elif ratio <.1:
                 # ratios of < .1 we count as if a 0 ratio, with allowance for
                 # sequencing error
                 ratio_count_in_window += 1
-            window_position += 1
-    
-        window_position = 0 # Reset the window position flag
+        current_window_end = pos
         
         # e.g. If 4/5 SNPs are below .1, that window is a run of 0 ratio
         # positions and thus counted as "parental"
         if ratio_count_in_window < permissible_ratio_count_in_window:
             consecutive_windows_below_threshold = 0
-        elif ratio_count_in_window >= permissible_ratio_count_in_window:
-            current_window_start = list(window)[0]
+        else:
             consecutive_windows_below_threshold += 1
             if consecutive_windows_below_threshold == 1:
-                current_run_windows_start = current_window_start            
-            current_window_end = POS_ratio_dict_sorted[list(window)[-1]]
-            if consecutive_windows_below_threshold > 1:
-                if consecutive_windows_below_threshold < max_consecutive_windows_below_threshold: 
-                    current_run_windows_end = list(window)[-1]
-                if consecutive_windows_below_threshold > max_consecutive_windows_below_threshold:
-                    max_consecutive_windows_below_threshold = consecutive_windows_below_threshold
-                    max_window_start = current_run_windows_start
-                    max_window_end = list(window)[-1]
+                current_run_windows_start = current_window_start
+            current_run_windows_end = current_window_end
+            if consecutive_windows_below_threshold > max_consecutive_windows_below_threshold:
+                max_consecutive_windows_below_threshold = consecutive_windows_below_threshold
+                max_window_start = current_run_windows_start
+                max_window_end = pos
     # Debug
     print(
-        "max window: ",
-        ("{:,}".format(max_window_start)),
-        "—",
-        ("{:,}".format(max_window_end))
+        "max window: {:,} — {:,}"
+        .format(max_window_start, max_window_end)
         )
-    print("max_consecutive_windows_below_threshold: ",
+    print("max_consecutive_windows_below_threshold:",
           max_consecutive_windows_below_threshold)
-    size_of_max_window = max_window_end - max_window_start
     print(
-        "size of max window: ",
-        ("{:,}".format(size_of_max_window))
+        "size of max window: {:,}"
+        .format(max_window_end - max_window_start)
         )
     return max_window_start, max_window_end
 
