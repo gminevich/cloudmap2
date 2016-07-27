@@ -38,8 +38,10 @@ alt_alleles_for_SNP_consideration = 2
 # Sliding window parameters
 window_size = 10
 
-# permissible_ratio_count_in_window = 8 # default for most samples
-permissible_ratio_count_in_window = 7 # for ot266, ot641, ot789
+# Express this as a ratio rather than an absolute number to make
+# the parameter independent of the chosen window_size.
+# permissible_ratio_count_in_window = 0.8 # default for most samples
+permissible_ratio_count_in_window = 0.7 # for ot266, ot641, ot789
 
 # Case where EMS mutation/random mutation in the parental strain exactly
 # matches mapping strain SNP. Thus falsely appears as a mapping strain SNP in
@@ -227,24 +229,32 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
     max_consecutive_windows_below_threshold = 0
     # evaluate contents of each window
     for window in sliding_window(POS_ratio_dict_sorted.items(), window_size):
-        ratio_count_in_window = 0
+        ratios_accepted = ratios_rejected = 0
         # store POS info of first element of window
         current_window_start = window[0][0]
         for pos, ratio in window:
             # Discounts cases where parental mutations(EMS or random) exactly
-            # match at an HA position, count this as a 0 ratio
+            # match at an HA position, treat these as neutral
             if (consecutive_windows_below_threshold > 0) \
                & (ratio > spurious_mapping_snp_position_ratio_threshold): 
-                ratio_count_in_window += 1
+                pass
             elif ratio <.1:
                 # ratios of < .1 we count as if a 0 ratio, with allowance for
                 # sequencing error
-                ratio_count_in_window += 1
+                ratios_accepted += 1
+            else:
+                ratios_rejected += 1
         current_window_end = pos
+        if ratios_accepted > 0:
+            fraction_ratios_accepted = ratios_accepted / (ratios_accepted
+                                                          + ratios_rejected)
+        else:
+            # do not risk a division by zero
+            fraction_ratios_accepted = 0
         
         # e.g. If 4/5 SNPs are below .1, that window is a run of 0 ratio
         # positions and thus counted as "parental"
-        if ratio_count_in_window < permissible_ratio_count_in_window:
+        if fraction_ratios_accepted < permissible_ratio_count_in_window:
             consecutive_windows_below_threshold = 0
         else:
             consecutive_windows_below_threshold += 1
