@@ -14,30 +14,43 @@ from scipy.stats import kde
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-# This has automatic bandwidth determination: http://docs.scipy.org/doc/scipy-0.15.1/reference/generated/scipy.stats.gaussian_kde.html
-# Bottom of page has methods that can be applied to the probability density function
-# Great reference comparing the KDE packages and why Scipy is the best (b/c less than 500pts, 1D): http://jakevdp.github.io/blog/2013/12/01/kernel-density-estimation/
-# "The result of the KDE is a pdf: that is, a Probability Density Function. It is normalized such that the integral over all parameter space is equal to 1." 
+# This has automatic bandwidth determination:
+# http://docs.scipy.org/doc/scipy-0.15.1/reference/generated/scipy.stats.gaussian_kde.html
+# Bottom of page has methods that can be applied to the probability density
+# function.
+# Great reference comparing the KDE packages and why Scipy is the best
+# (b/c less than 500pts, 1D):
+# http://jakevdp.github.io/blog/2013/12/01/kernel-density-estimation/
+# "The result of the KDE is a pdf: that is, a Probability Density Function. It
+# is normalized such that the integral over all parameter space is equal to 1." 
 
-# Adjustable SNP ratios (adjust if your pool of mutants has been contaminated with WT) values below this ratio (at mapping SNP positions only) will count as non-SNP variants
-permissive_ratio_HA_SNP = .1 
-permissive_ratio_Homoz_Parental_SNP = .6 # values above this ratio (in regions of linkage only) will count as parental SNP variants
+# Adjustable SNP ratios (adjust if your pool of mutants has been contaminated
+# with WT).
+# values below this ratio (at mapping SNP positions only) will count as
+# non-SNP variants
+permissive_ratio_HA_SNP = .1
+# values above the ratio below (in regions of linkage only) will count as
+# parental SNP variants
+permissive_ratio_Homoz_Parental_SNP = .6
 read_depth_for_SNP_consideration = 10
 alt_alleles_for_SNP_consideration = 2
 
 # Sliding window parameters
 window_size = 10
 
-#permissible_ratio_count_in_window = 8 # default for most samples
+# permissible_ratio_count_in_window = 8 # default for most samples
 permissible_ratio_count_in_window = 7 # for ot266, ot641, ot789
 
-# Case where EMS mutation/random mutation in the parental strain exactly matches mapping strain SNP. Thus falsely appears as a mapping strain SNP in analysis.
+# Case where EMS mutation/random mutation in the parental strain exactly
+# matches mapping strain SNP. Thus falsely appears as a mapping strain SNP in
+# analysis.
 spurious_mapping_snp_position_ratio_threshold = .6  
 # parental vs ems variants (true) flag
 ems_flag = 'false'
 # causal variant chromosome flag
 causal_chromosome_flag = 'chrX'
-# for purposes of making plots for paper figures, can label the known causal variant
+# for purposes of making plots for paper figures, can label the known causal
+# variant
 #causal_variant_position = '7534526'
 
 max_x = 0
@@ -52,9 +65,11 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
     # Call all functions and loop through all chromosomes. 
     mapping_strain_positions_df = parse_mapping_strain_positions_df(load_vcf_as_df(HA_SNPs_file))
     parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Parental_file)    
-    #ToDo generalize this to handle all the different formats of chromosome names. 
+    # ToDo: generalize this to handle all the different formats of chromosome
+    # names. 
     all_chromosomes = pd.unique(mapping_strain_positions_df.CHROM.ravel()) 
-    # Remove MtDNA from ndarray, right now only do it by index, but should likely also plot MTDNA since there could be causal mutations there.
+    # Remove MtDNA from ndarray, right now only do it by index, but should
+    # likely also plot MTDNA since there could be causal mutations there.
     all_chromosomes = np.delete(all_chromosomes, 4)
 
     for chrom in all_chromosomes:
@@ -62,21 +77,31 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
         print ("--------------------------------")
         print ("chrom: ", chrom)
         # Get longest region of linkage on each chromosome
-        max_window_start, max_window_end = longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions_df, chrom)
+        max_window_start, max_window_end = longest_region_of_parental_linkage_via_mapping_snps(
+            mapping_strain_positions_df, chrom
+            )
         # Get parental strain SNPs in longest mapping region on each chromosome
         parental_strain_SNPs_in_longest_mapping_region = parental_strain_variants_in_longest_non_crossing_strain_subsegment(
             parental_homozygous_snps_df,
             max_window_start, max_window_end, chrom
-        )
+            )
         # Calculate KDE on the parental strain SNPs within the mapping region
         if len(parental_strain_SNPs_in_longest_mapping_region.index) >= 3:
             kde_max_y, kde_max_x, xgrid, probablity_density_function = kernel_density_estimation(parental_strain_SNPs_in_longest_mapping_region, chrom)
-            kde_output_plot(xgrid, probablity_density_function, chrom, parental_strain_SNPs_in_longest_mapping_region, kde_max_x, kde_max_y)              
+            kde_output_plot(
+                xgrid, probablity_density_function,
+                chrom, parental_strain_SNPs_in_longest_mapping_region,
+                kde_max_x, kde_max_y
+                )              
         # If 1-2 snps on the chromosome, plot them without kde.
         elif 1 >= len(parental_strain_SNPs_in_longest_mapping_region.index) < 3:
-            minimal_snp_plot(chrom, parental_strain_SNPs_in_longest_mapping_region)
+            minimal_snp_plot(
+                chrom, parental_strain_SNPs_in_longest_mapping_region
+                )
         else:
-            minimal_snp_plot(chrom, parental_strain_SNPs_in_longest_mapping_region)
+            minimal_snp_plot(
+                chrom, parental_strain_SNPs_in_longest_mapping_region
+                )
 
     finish_plot(mapping_plot_pdf, fig)
         
@@ -97,7 +122,8 @@ def initiate_plot(ofile):
 
    
 def finish_plot(mapping_plot_pdf=None, fig=None):
-    """ Finalize the plotting parameters and save """
+    """Finalize the plotting parameters and save."""
+
     # http://stackoverflow.com/questions/19273040/rotating-axis-text-for-each-subplot
     for ax in fig.axes:
         plt.sca(ax)
@@ -129,11 +155,23 @@ def parse_mapping_strain_positions_df(mapping_strain_positions_df = None):
     ref_allele_count = pd.to_numeric(vcf_allele_freq_data.str.split(',').str[0])
     alt_allele_count = pd.to_numeric(vcf_allele_freq_data.str.split(',').str[1])
     read_depth = vcf_read_group_data.str[2]
-    # ToDo: Change to ratio of alt/read depth (only for cases where read depth = alt+ref to account for sequencing error/noise). For now, just use alt/read depth
+    # ToDo: Change to ratio of alt/read depth (only for cases where
+    # read depth = alt+ref to account for sequencing error/noise).
+    # For now, just use alt/read depth.
     ratio = (pd.to_numeric(alt_allele_count)) / (pd.to_numeric(read_depth))
 
-    parsed_mapping_strain_positions_df = pd.concat([mapping_strain_positions_df.CHROM, mapping_strain_positions_df.POS, alt_allele_count, ref_allele_count, pd.to_numeric(read_depth), ratio], axis=1)
-    parsed_mapping_strain_positions_df.columns = ['CHROM', 'POS', 'alt_allele_count', 'ref_allele_count', 'read_depth', 'ratio']    
+    parsed_mapping_strain_positions_df = pd.concat(
+        [mapping_strain_positions_df.CHROM,
+         mapping_strain_positions_df.POS,
+         alt_allele_count, ref_allele_count,
+         pd.to_numeric(read_depth), ratio],
+        axis=1
+        )
+    parsed_mapping_strain_positions_df.columns = [
+        'CHROM', 'POS',
+        'alt_allele_count', 'ref_allele_count',
+        'read_depth', 'ratio'
+        ]    
     return parsed_mapping_strain_positions_df
 
 
@@ -151,36 +189,58 @@ def sliding_window(seq, window_size=10):
 def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions_df, current_chrom):
     """ Calculates the longest region of parental linkage via analysis of SNP ratios within a sliding window """
     # either 0 ratio positions or cases where at least 2 alternate reads
-    mapping_strain_positions_df = mapping_strain_positions_df[(mapping_strain_positions_df.alt_allele_count == 0) | (mapping_strain_positions_df.alt_allele_count > alt_alleles_for_SNP_consideration)] 
-    mapping_strain_positions_df = mapping_strain_positions_df.loc[(mapping_strain_positions_df.CHROM == current_chrom) & (mapping_strain_positions_df.read_depth > read_depth_for_SNP_consideration)] 
-    
-    POS_ratio_DF = mapping_strain_positions_df[['POS','ratio']] # Convert DF to dictionary and find max consecutive interval
-    POS_ratio_dict = dict(zip(POS_ratio_DF.POS, POS_ratio_DF.ratio)) # Build the dict
-    POS_ratio_dict_sorted = collections.OrderedDict(sorted(POS_ratio_dict.items())) # Sort the dict
+    mapping_strain_positions_df = mapping_strain_positions_df[
+        (mapping_strain_positions_df.alt_allele_count == 0)
+        | (mapping_strain_positions_df.alt_allele_count
+           > alt_alleles_for_SNP_consideration)
+        ] 
+    mapping_strain_positions_df = mapping_strain_positions_df.loc[
+        (mapping_strain_positions_df.CHROM == current_chrom)
+        & (mapping_strain_positions_df.read_depth
+           > read_depth_for_SNP_consideration)
+        ] 
+
+    # Convert DF to dictionary and find max consecutive interval
+    POS_ratio_DF = mapping_strain_positions_df[['POS','ratio']]
+    # Build the dict
+    POS_ratio_dict = dict(zip(POS_ratio_DF.POS, POS_ratio_DF.ratio))
+    # Sort the dict
+    POS_ratio_dict_sorted = collections.OrderedDict(sorted(POS_ratio_dict.items()))
     
     current_run_windows_start = 0
     current_run_windows_end = 0
-    max_window_start = 0 # the first/leftmost position in the window that begins the longest interval below threshold 
-    max_window_end = 0 # the last/rightmost position in the window that ends the longest interval below threshold
+    # the first/leftmost position in the window that begins the longest
+    # interval below threshold
+    max_window_start = 0
+    # the last/rightmost position in the window that ends the longest interval
+    # below threshold
+    max_window_end = 0 
     current_window_start = 0
     current_window_end = 0
     consecutive_windows_below_threshold = 0
     max_consecutive_windows_below_threshold = 0
-    for window in sliding_window(POS_ratio_dict_sorted, window_size): # evaluate contents of each window
+    # evaluate contents of each window
+    for window in sliding_window(POS_ratio_dict_sorted, window_size):
         ratio_count_in_window = 0
         window_position = 0 
     
         for _ in list(window):
-            # Discounts cases where parental mutations(EMS or random) exactly match at an HA position, count this as a 0 ratio
-            if (consecutive_windows_below_threshold > 0) & (POS_ratio_dict_sorted[list(window)[window_position]] > spurious_mapping_snp_position_ratio_threshold): 
+            # Discounts cases where parental mutations(EMS or random) exactly
+            # match at an HA position, count this as a 0 ratio
+            if (consecutive_windows_below_threshold > 0) \
+               & (POS_ratio_dict_sorted[list(window)[window_position]]
+                  > spurious_mapping_snp_position_ratio_threshold): 
                 ratio_count_in_window += 1
-            if POS_ratio_dict_sorted[list(window)[window_position]] <.1: # ratios of < .1 we count as if a 0 ratio, with allowance for sequencing error
+            if POS_ratio_dict_sorted[list(window)[window_position]] <.1:
+                # ratios of < .1 we count as if a 0 ratio, with allowance for
+                # sequencing error
                 ratio_count_in_window += 1
             window_position += 1
     
         window_position = 0 # Reset the window position flag
         
-        # e.g. If 4/5 SNPs are below .1, that window is a run of 0 ratio positions and thus counted as "parental"
+        # e.g. If 4/5 SNPs are below .1, that window is a run of 0 ratio
+        # positions and thus counted as "parental"
         if ratio_count_in_window < permissible_ratio_count_in_window:
             consecutive_windows_below_threshold = 0
         elif ratio_count_in_window >= permissible_ratio_count_in_window:
@@ -197,11 +257,19 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
                     max_window_start = current_run_windows_start
                     max_window_end = list(window)[-1]
     # Debug
-    print ("max window: ", ("{:,}".format(max_window_start)), "—", ("{:,}".format(max_window_end)) )
-    print ("max_consecutive_windows_below_threshold: ", max_consecutive_windows_below_threshold)
+    print(
+        "max window: ",
+        ("{:,}".format(max_window_start)),
+        "—",
+        ("{:,}".format(max_window_end))
+        )
+    print("max_consecutive_windows_below_threshold: ",
+          max_consecutive_windows_below_threshold)
     size_of_max_window = max_window_end - max_window_start
-    print ("size of max window: ", ("{:,}".format(size_of_max_window)) )
-
+    print(
+        "size of max window: ",
+        ("{:,}".format(size_of_max_window))
+        )
     return max_window_start, max_window_end
 
 
@@ -213,34 +281,76 @@ def parental_strain_variants_in_longest_non_crossing_strain_subsegment(
     """Identifies parental strain variants in the longest region devoid of crossing strain snps """    
     
     # Split SAMPLE Column with each field as a new column
-    parental_homozygous_snps_read_group_data = parental_homozygous_snps_df.SAMPLE.str.split(':')
-    parental_homozygous_snps_allele_freq_data = parental_homozygous_snps_read_group_data.str[1]
-    parental_homozygous_ref_allele_count = parental_homozygous_snps_allele_freq_data.str.split(',').str[0]
+    parental_homozygous_snps_read_group_data = \
+        parental_homozygous_snps_df.SAMPLE.str.split(':')
+    parental_homozygous_snps_allele_freq_data = \
+        parental_homozygous_snps_read_group_data.str[1]
+    parental_homozygous_ref_allele_count = \
+        parental_homozygous_snps_allele_freq_data.str.split(',').str[0]
     parental_homozygous_ref_allele_count.name = 'ref_allele_count'
-    parental_homozygous_alt_allele_count = parental_homozygous_snps_allele_freq_data.str.split(',').str[1]
+    parental_homozygous_alt_allele_count = \
+        parental_homozygous_snps_allele_freq_data.str.split(',').str[1]
     parental_homozygous_alt_allele_count.name = 'alt_allele_count'    
-    parental_homozygous_read_depth = parental_homozygous_snps_read_group_data.str[2]
+    parental_homozygous_read_depth = \
+        parental_homozygous_snps_read_group_data.str[2]
 
     # Ratio of alt/read depth (only for cases where read depth = alt+ref). For now, just use alt/read depth
-    parental_homozygous_ratio = (pd.to_numeric(parental_homozygous_alt_allele_count)/pd.to_numeric(parental_homozygous_read_depth))
+    parental_homozygous_ratio = (
+        pd.to_numeric(parental_homozygous_alt_allele_count)
+        /pd.to_numeric(parental_homozygous_read_depth)
+        )
 
     # Calculate EMS variants
-    parental_homozygous_snps_df['EMS'] = np.where(np.logical_or(parental_homozygous_snps_df['REF']=='G',parental_homozygous_snps_df['REF']=='C') & np.logical_or(parental_homozygous_snps_df['ALT']=='A',parental_homozygous_snps_df['ALT']=='T') , 'yes', 'no')
+    parental_homozygous_snps_df['EMS'] = np.where(
+        np.logical_or(parental_homozygous_snps_df['REF']=='G',
+                      parental_homozygous_snps_df['REF']=='C')
+        & np.logical_or(parental_homozygous_snps_df['ALT']=='A',
+                        parental_homozygous_snps_df['ALT']=='T'),
+        'yes', 'no'
+        )
     
     # Return DF of key VCF columns (header missing for newly created columns)
-    parental_homozygous_snps_df_ems_depth_calc = pd.concat([parental_homozygous_snps_df.EMS, parental_homozygous_snps_df.CHROM, parental_homozygous_snps_df.POS, parental_homozygous_ratio], axis=1)
-    parental_homozygous_snps_df_ems_depth_calc.columns = ['EMS', 'CHROM', 'POS', 'ratio']
+    parental_homozygous_snps_df_ems_depth_calc = pd.concat(
+        [parental_homozygous_snps_df.EMS,
+         parental_homozygous_snps_df.CHROM,
+         parental_homozygous_snps_df.POS,
+         parental_homozygous_ratio],
+        axis=1
+        )
+    parental_homozygous_snps_df_ems_depth_calc.columns = [
+        'EMS', 'CHROM', 'POS', 'ratio'
+        ]
 
-    # Get the linked chromosome. DIFFERENT CHROMOSOME NAMING CONVENTION IN THE HOMOZYGOUS PARENTAL VARIANTS FILE
-    parental_homozygous_linked_chromosome = parental_homozygous_snps_df_ems_depth_calc[(parental_homozygous_snps_df_ems_depth_calc.CHROM==current_chrom) & (parental_homozygous_snps_df_ems_depth_calc.ratio > permissive_ratio_Homoz_Parental_SNP) ]
+    # Get the linked chromosome.
+    # DIFFERENT CHROMOSOME NAMING CONVENTION IN THE HOMOZYGOUS PARENTAL
+    # VARIANTS FILE
+    parental_homozygous_linked_chromosome = \
+        parental_homozygous_snps_df_ems_depth_calc[
+            (parental_homozygous_snps_df_ems_depth_calc.CHROM==current_chrom)
+            & (parental_homozygous_snps_df_ems_depth_calc.ratio
+               > permissive_ratio_Homoz_Parental_SNP)
+            ]
 
     # For testing/paper figure purposes plot all parental or just ems variants
     if ems_flag == 'false':
         # All parental variants (EMS and genetic drift)
-        parental_strain_SNPs_in_longest_mapping_region = parental_homozygous_linked_chromosome[(parental_homozygous_linked_chromosome.POS > start_largest_consecutive) & (parental_homozygous_linked_chromosome.POS < end_largest_consecutive)]
+        parental_strain_SNPs_in_longest_mapping_region = \
+            parental_homozygous_linked_chromosome[
+                (parental_homozygous_linked_chromosome.POS
+                 > start_largest_consecutive)
+                & (parental_homozygous_linked_chromosome.POS
+                   < end_largest_consecutive)
+                ]
     elif ems_flag == 'true':
         # Filtered for EMS variants    
-        parental_strain_SNPs_in_longest_mapping_region = parental_homozygous_linked_chromosome[(parental_homozygous_linked_chromosome.POS > start_largest_consecutive) & (parental_homozygous_linked_chromosome.POS < end_largest_consecutive) & (parental_homozygous_linked_chromosome.EMS =="yes")]
+        parental_strain_SNPs_in_longest_mapping_region = \
+            parental_homozygous_linked_chromosome[
+                (parental_homozygous_linked_chromosome.POS
+                 > start_largest_consecutive)
+                & (parental_homozygous_linked_chromosome.POS
+                   < end_largest_consecutive)
+                & (parental_homozygous_linked_chromosome.EMS =="yes")
+                ]
 
     # Debug
     #if current_chrom == causal_chromosome_flag:
@@ -280,7 +390,11 @@ def set_plot_axes(chrom=None, is_minimal_snp_plot=True):
     return ax, chrom_length
     
     
-def kde_output_plot(xgrid, probablity_density_function, chrom, parental_strain_SNPs_in_longest_mapping_region, kde_max_x, kde_max_y):  
+def kde_output_plot(
+    xgrid, probablity_density_function,
+    chrom, parental_strain_SNPs_in_longest_mapping_region,
+    kde_max_x, kde_max_y
+    ):  
     """ Calculates kernel density estimation on linked parental variants in cases where have at least 3 variants. """
     ax, _ = set_plot_axes(chrom, is_minimal_snp_plot=False)
   
@@ -294,21 +408,45 @@ def kde_output_plot(xgrid, probablity_density_function, chrom, parental_strain_S
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
     # Add commas to x-axis
-    ax.get_xaxis().set_major_formatter(tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
-    # Annotate the predicted position http://matplotlib.org/examples/pylab_examples/annotation_demo.html
-    ax.annotate(("{:,}".format(round(kde_max_x))), (kde_max_x, kde_max_y), xytext=(0, -30),textcoords='offset points', arrowprops=dict(facecolor='black', shrink=0.05), horizontalalignment='center', verticalalignment='bottom')      
+    ax.get_xaxis().set_major_formatter(
+        tkr.FuncFormatter(lambda x, p: format(int(x), ','))
+        )
+    # Annotate the predicted position
+    # http://matplotlib.org/examples/pylab_examples/annotation_demo.html
+    ax.annotate(
+        ("{:,}".format(round(kde_max_x))),
+        (kde_max_x, kde_max_y),
+        xytext=(0, -30),
+        textcoords='offset points',
+        arrowprops=dict(facecolor='black', shrink=0.05),
+        horizontalalignment='center',
+        verticalalignment='bottom'
+        )      
     
-    #ToDO remove?
-    #parental_strain_SNPs_in_longest_mapping_region_EMS = parental_homozygous_linked_chromosome[(parental_homozygous_linked_chromosome.POS > start_largest_consecutive) & (parental_homozygous_linked_chromosome.POS < end_largest_consecutive) & (parental_homozygous_linked_chromosome.EMS =="yes")]
-    parental_strain_SNPs_in_longest_mapping_region_EMS = parental_strain_SNPs_in_longest_mapping_region[(parental_strain_SNPs_in_longest_mapping_region.EMS =="yes")]
+    # ToDO: remove?
+    # parental_strain_SNPs_in_longest_mapping_region_EMS = parental_homozygous_linked_chromosome[(parental_homozygous_linked_chromosome.POS > start_largest_consecutive) & (parental_homozygous_linked_chromosome.POS < end_largest_consecutive) & (parental_homozygous_linked_chromosome.EMS =="yes")]
+    parental_strain_SNPs_in_longest_mapping_region_EMS = \
+        parental_strain_SNPs_in_longest_mapping_region[
+            (parental_strain_SNPs_in_longest_mapping_region.EMS =="yes")
+            ]
     
     # Plot the scatter points on X axis
     # http://stackoverflow.com/questions/7352220/how-to-plot-1-d-data-at-given-y-value-with-pylab
     # http://matplotlib.org/api/markers_api.html -- point style reference
-    plt.plot(parental_strain_SNPs_in_longest_mapping_region.POS, np.zeros_like(parental_strain_SNPs_in_longest_mapping_region.POS) + 0, 'o', color='grey')
+    plt.plot(
+        parental_strain_SNPs_in_longest_mapping_region.POS,
+        np.zeros_like(parental_strain_SNPs_in_longest_mapping_region.POS)+0,
+        'o',
+        color='grey'
+        )
     
     # Overplot EMS variants in a different color
-    plt.plot(parental_strain_SNPs_in_longest_mapping_region_EMS.POS, np.zeros_like(parental_strain_SNPs_in_longest_mapping_region_EMS.POS) + 0, 'd', color='blue')
+    plt.plot(
+        parental_strain_SNPs_in_longest_mapping_region_EMS.POS,
+        np.zeros_like(parental_strain_SNPs_in_longest_mapping_region_EMS.POS)+0,
+        'd',
+        color='blue'
+        )
     
     # Debug
     # For paper figures, can plot the causal variant so it stands out
@@ -320,16 +458,22 @@ def kde_output_plot(xgrid, probablity_density_function, chrom, parental_strain_S
     #    plt.plot(causal_variant_position_II, 0, 'd', color='red')
 
 
-def minimal_snp_plot(chrom, parental_strain_SNPs_in_longest_mapping_region=None):
+def minimal_snp_plot(
+    chrom, parental_strain_SNPs_in_longest_mapping_region=None
+    ):
     """ For cases where no parental variants in a region of linkage (defined as region devoid of crossing strain variants) or 1-2 linked parental variants, 
-        simply plot the positions without kde b/c kde on 1-2 points is meaningless. """
+        simply plot the positions without kde b/c kde on 1-2 points is meaningless.
+        """
     # Debug
-    print ("Plot performed on these SNPs: \n", parental_strain_SNPs_in_longest_mapping_region)
+    print("Plot performed on these SNPs: \n",
+          parental_strain_SNPs_in_longest_mapping_region)
     
     ax, chrom_length = set_plot_axes(chrom, is_minimal_snp_plot=True)
    
     # Add commas to x-axis
-    ax.get_xaxis().set_major_formatter(tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
+    ax.get_xaxis().set_major_formatter(
+        tkr.FuncFormatter(lambda x, p: format(int(x), ','))
+        )
     
     # Debug: Remove scientific formatting
     #plt.ticklabel_format(style='plain', axis='x')
@@ -341,37 +485,72 @@ def minimal_snp_plot(chrom, parental_strain_SNPs_in_longest_mapping_region=None)
         plt.axis([0, chrom_length, 0, 1])
     elif len(parental_strain_SNPs_in_longest_mapping_region.index) == 1:
         # if 1 snp, set axes to 1000bp+/-
-        plt.axis([parental_strain_SNPs_in_longest_mapping_region.POS.min() - 1000, parental_strain_SNPs_in_longest_mapping_region.POS.min()+1000, 0, 1])
+        plt.axis(
+            [parental_strain_SNPs_in_longest_mapping_region.POS.min() - 1000,
+             parental_strain_SNPs_in_longest_mapping_region.POS.min() + 1000,
+             0, 1]
+            )
     elif len(parental_strain_SNPs_in_longest_mapping_region.index) == 2:
         # if 2 snps, set axes to 1000bp+/- each end
-        plt.axis([parental_strain_SNPs_in_longest_mapping_region.POS.min() - 1000, parental_strain_SNPs_in_longest_mapping_region.POS.max()+1000, 0, 1])    
+        plt.axis(
+            [parental_strain_SNPs_in_longest_mapping_region.POS.min() - 1000,
+             parental_strain_SNPs_in_longest_mapping_region.POS.max() + 1000,
+             0, 1]
+            )    
 
     # Identify the subset of EMS snps
-    parental_strain_SNPs_in_longest_mapping_region_EMS = parental_strain_SNPs_in_longest_mapping_region[(parental_strain_SNPs_in_longest_mapping_region.EMS =="yes")]
+    parental_strain_SNPs_in_longest_mapping_region_EMS = \
+        parental_strain_SNPs_in_longest_mapping_region[
+            (parental_strain_SNPs_in_longest_mapping_region.EMS =="yes")
+            ]
 
     # Plot 1-2 variants without kde
     if len(parental_strain_SNPs_in_longest_mapping_region.index) > 0:
         for positions in parental_strain_SNPs_in_longest_mapping_region:
             # plot non-ems variants
-            plt.plot(parental_strain_SNPs_in_longest_mapping_region.POS, np.zeros_like(parental_strain_SNPs_in_longest_mapping_region.POS) + 0, 'o', color='grey')
+            plt.plot(
+                parental_strain_SNPs_in_longest_mapping_region.POS,
+                np.zeros_like(
+                    parental_strain_SNPs_in_longest_mapping_region.POS
+                    ) + 0,
+                'o', color='grey'
+                )
             # overplot EMS variants in a different color
-            plt.plot(parental_strain_SNPs_in_longest_mapping_region_EMS.POS, np.zeros_like(parental_strain_SNPs_in_longest_mapping_region_EMS.POS) + 0, 'd', color='blue')
+            plt.plot(
+                parental_strain_SNPs_in_longest_mapping_region_EMS.POS,
+                np.zeros_like(
+                    parental_strain_SNPs_in_longest_mapping_region_EMS.POS
+                    ) + 0,
+                'd', color='blue'
+                )
 
     plt.title(chrom)
 
 
-def kernel_density_estimation(parental_strain_SNPs_in_longest_mapping_region=None, chrom=None):
+def kernel_density_estimation(
+    parental_strain_SNPs_in_longest_mapping_region=None, chrom=None
+    ):
     """ Perform kernel density estimation on a given set of linked parental variants """
+
     # minimum data points required for KDE: http://stats.stackexchange.com/questions/76948/what-is-the-minimum-number-of-data-points-required-for-kernel-density-estimation
-    print ("KDE performed on these SNPs: \n", parental_strain_SNPs_in_longest_mapping_region)
-    kernel = kde.gaussian_kde(parental_strain_SNPs_in_longest_mapping_region.POS)
-    xgrid = np.linspace(parental_strain_SNPs_in_longest_mapping_region.POS.min(), parental_strain_SNPs_in_longest_mapping_region.POS.max())
+    print("KDE performed on these SNPs: \n",
+          parental_strain_SNPs_in_longest_mapping_region)
+    kernel = kde.gaussian_kde(
+        parental_strain_SNPs_in_longest_mapping_region.POS
+        )
+    xgrid = np.linspace(
+        parental_strain_SNPs_in_longest_mapping_region.POS.min(),
+        parental_strain_SNPs_in_longest_mapping_region.POS.max()
+        )
 
     probablity_density_function = kernel.evaluate(xgrid)
-    
-    max_y = max(probablity_density_function) # Find the maximum y value
-    max_x = xgrid[probablity_density_function.argmax()] # Corresponding X value for the max y. 
-    print ("Predicted position of mutation: ",("{:,}".format(round(max_x))) ) # Print large numbers with commas
+    # Find the maximum y value and its corresponding x value.
+    max_y = max(probablity_density_function)
+    max_x = xgrid[probablity_density_function.argmax()] 
+    print(
+        "Predicted position of mutation: ",
+        ("{:,}".format(round(max_x)))
+        ) # Print large numbers with commas
     return max_y, max_x, xgrid, probablity_density_function
 
 
@@ -390,7 +569,8 @@ if __name__ == "__main__":
     parser.add_argument('Homozygous_Parental_file', nargs='?',
                         metavar='<bulked segregants vcf>',
                         default=Parental_default,
-                        help='VCF file with SNPs found in the bulked segregants sample')
+                        help='VCF file with SNPs found '
+                             'in the bulked segregants sample')
     parser.add_argument('HA_SNPs_file', nargs='?',
                         metavar='<mapping strain vcf>',
                         default=HA_default,
