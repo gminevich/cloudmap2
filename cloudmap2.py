@@ -14,8 +14,15 @@ from scipy.stats import kde
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-# The result of the KDE is a Probability Density Function. It is normalized
-#  such that the integral over all parameter space is equal to 1.
+# This has automatic bandwidth determination:
+# http://docs.scipy.org/doc/scipy-0.15.1/reference/generated/scipy.stats.gaussian_kde.html
+# Bottom of page has methods that can be applied to the probability density
+# function.
+# Great reference comparing the KDE packages and why Scipy is the best
+# (b/c less than 500pts, 1D):
+# http://jakevdp.github.io/blog/2013/12/01/kernel-density-estimation/
+# "The result of the KDE is a pdf: that is, a Probability Density Function. It
+# is normalized such that the integral over all parameter space is equal to 1." 
 
 # Adjustable SNP ratios (adjust if your pool of mutants has been contaminated
 # with WT).
@@ -112,6 +119,11 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
 def initiate_plot(ofile):
     """Set up plotting parameters."""
 
+    # compare:
+    # http://blog.marmakoide.org/?p=94 and
+    # http://matplotlib.org/users/gridspec.html
+
+    # http://stackoverflow.com/questions/33995707/attributeerror-unknown-property-color-cycle
     plt.style.use('ggplot')
     mapping_plot_pdf = PdfPages(ofile)
     # http://matplotlib.org/api/figure_api.html
@@ -122,6 +134,7 @@ def initiate_plot(ofile):
 def finish_plot(mapping_plot_pdf=None, fig=None):
     """Finalize the plotting parameters and save."""
 
+    # http://stackoverflow.com/questions/19273040/rotating-axis-text-for-each-subplot
     for ax in fig.axes:
         plt.sca(ax)
         plt.xticks(rotation=25)
@@ -131,6 +144,7 @@ def finish_plot(mapping_plot_pdf=None, fig=None):
     plt.subplots_adjust(wspace=.3, hspace=.7)
     #plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
 
+    #http://stackoverflow.com/questions/6541123/improve-subplot-size-spacing-with-many-subplots-in-matplotlib
     mapping_plot_pdf.savefig(fig, pad_inches=.5, orientation='landscape')
     # Write the PDF document to the disk
     mapping_plot_pdf.close()
@@ -393,6 +407,10 @@ def kde_output_plot(
     plt.plot(xgrid, probablity_density_function, 'r-')
     plt.title(chrom)
         
+    # Use/Remove scientific notation
+    # http://stackoverflow.com/questions/28371674/prevent-scientific-notation-in-matplotlib-pyplot
+    # http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.ticklabel_format
+    # plt.ticklabel_format(style='plain', axis='y')
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
     # Add commas to x-axis
@@ -400,6 +418,7 @@ def kde_output_plot(
         tkr.FuncFormatter(lambda x, p: format(int(x), ','))
         )
     # Annotate the predicted position
+    # http://matplotlib.org/examples/pylab_examples/annotation_demo.html
     ax.annotate(
         ("{:,}".format(round(kde_max_x))),
         (kde_max_x, kde_max_y),
@@ -418,6 +437,8 @@ def kde_output_plot(
             ]
     
     # Plot the scatter points on X axis
+    # http://stackoverflow.com/questions/7352220/how-to-plot-1-d-data-at-given-y-value-with-pylab
+    # http://matplotlib.org/api/markers_api.html -- point style reference
     plt.plot(
         parental_strain_SNPs_in_longest_mapping_region.POS,
         np.zeros_like(parental_strain_SNPs_in_longest_mapping_region.POS)+0,
@@ -517,6 +538,7 @@ def kernel_density_estimation(
     ):
     """ Perform kernel density estimation on a given set of linked parental variants """
 
+    # minimum data points required for KDE: http://stats.stackexchange.com/questions/76948/what-is-the-minimum-number-of-data-points-required-for-kernel-density-estimation
     print("KDE performed on these SNPs: \n",
           parental_strain_SNPs_in_longest_mapping_region)
     kernel = kde.gaussian_kde(
