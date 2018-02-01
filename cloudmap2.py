@@ -1,4 +1,10 @@
-# -*- coding: utf-8 -*-
+###############################################################################
+# CloudMap2 
+# 
+# Bulk segregant mapping tool that generates maps of linked chromosomal regions 
+# with color-coded SNPs of interest. Also uses kernel density estimation on
+# linked parental SNPs to predict position of most likely causal SNP(s).
+###############################################################################
 
 import argparse
 
@@ -14,64 +20,57 @@ from scipy.stats import kde
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-# This has automatic bandwidth determination:
-# http://docs.scipy.org/doc/scipy-0.15.1/reference/generated/scipy.stats.gaussian_kde.html
-# Bottom of page has methods that can be applied to the probability density
-# function.
-# Great reference comparing the KDE packages and why Scipy is the best
-# (b/c less than 500pts, 1D):
-# http://jakevdp.github.io/blog/2013/12/01/kernel-density-estimation/
-# "The result of the KDE is a pdf: that is, a Probability Density Function. It
-# is normalized such that the integral over all parameter space is equal to 1." 
-
 # Adjustable SNP ratios (adjust if your pool of mutants has been contaminated
-# with WT).
-# values below this ratio (at mapping SNP positions only) will count as
-# non-SNP variants
+# with WT). Values below this ratio (at mapping SNP positions only) will count 
+# as non-SNP variants.
 permissive_ratio_HA_SNP = .1
-# values above the ratio below (in regions of linkage only) will count as
+
+# Values above the ratio below (in regions of linkage only) will count as
 # parental SNP variants
 permissive_ratio_Homoz_Parental_SNP = .6
 read_depth_for_SNP_consideration = 10
 alt_alleles_for_SNP_consideration = 2
 
-# Sliding window parameters
+# Sliding window parameter
 window_size = 10
 
-# Express this as a ratio rather than an absolute number to make
-# the parameter independent of the chosen window_size.
-# permissible_ratio_count_in_window = 0.8 # default for most samples
-permissible_ratio_count_in_window = 0.7 # for ot266, ot641, ot789
+# Express this as a ratio rather than an absolute number to make the parameter
+# independent of the chosen window_size.
+permissible_ratio_count_in_window = 0.7 
 
-# Case where EMS mutation/random mutation in the parental strain exactly
-# matches mapping strain SNP. Thus falsely appears as a mapping strain SNP in
-# analysis.
+# Deals with cases where EMS mutation/random mutation in the parental strain
+# exactly matches mapping strain SNP. Thus falsely interpreted as a mapping 
+# strain SNP in analysis.
 spurious_mapping_snp_position_ratio_threshold = .6  
-# parental vs ems variants (true) flag
+
+# Whether to: 
+# plot all parental variants (false)
+# or EMS variants (G/C—>A/T) only (true).
 ems_flag = 'false'
-# causal variant chromosome flag
-causal_chromosome_flag = 'chrX'
-# for purposes of making plots for paper figures, can label the known causal
-# variant
-#causal_variant_position = '7534526'
+
+# For purposes of making plots for paper figures, can label the known causal
+# variant.
+# hu80: cic-1 chr III:2,401,031
+# ot785: lin-13 chr III:7,701,091
+# causal_chromosome_flag = 'chrIII'
+# causal_variant_position = '2401031'
 
 max_x = 0
 max_y = 0
 
 
-def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
+def main(Homozygous_Bulked_Segregant_SNPs_w_Mapping_Strain_SNPs_Subtracted_file, Bulked_Segregant_Allele_Ratios_at_Mapping_Strain_SNP_Positions_file, ofile):
     # ToDo: convert all hardcoded options to command line parameters
 
-    # Call all functions and loop through all chromosomes. 
     mapping_strain_positions_df = parse_mapping_strain_positions_df(
-        load_vcf_as_df(HA_SNPs_file)
+        load_vcf_as_df(Bulked_Segregant_Allele_Ratios_at_Mapping_Strain_SNP_Positions_file)
         )
-    parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Parental_file)    
+    parental_homozygous_snps_df = load_vcf_as_df(Homozygous_Bulked_Segregant_SNPs_w_Mapping_Strain_SNPs_Subtracted_file)    
     # ToDo: generalize this to handle all the different formats of chromosome
     # names. 
     all_chromosomes = pd.unique(mapping_strain_positions_df.CHROM.ravel()) 
     # Remove MtDNA from ndarray, right now only do it by index, but should
-    # likely also plot MTDNA since there could be causal mutations there.
+    # likely also plot MtDNA since there could be causal mutations there.
     all_chromosomes = np.delete(all_chromosomes, 4)
 
     mapping_plot_pdf, fig = initiate_plot(ofile)
@@ -92,6 +91,7 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
                 max_window_start, max_window_end, chrom
                 )
         # Calculate KDE on the parental strain SNPs within the mapping region
+        # Need at least 3 variants in order to use KDE
         if len(parental_strain_SNPs_in_longest_mapping_region.index) >= 3:
             kde_max_y, kde_max_x, xgrid, probablity_density_function = \
                 kernel_density_estimation(
@@ -103,7 +103,7 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
                 chrom, parental_strain_SNPs_in_longest_mapping_region,
                 kde_max_x, kde_max_y
                 )              
-        # If 1-2 snps on the chromosome, plot them without kde.
+        # If not enough SNPs to use KDE, plot them without kde.
         elif 1 >= len(parental_strain_SNPs_in_longest_mapping_region.index) < 3:
             minimal_snp_plot(
                 chrom, parental_strain_SNPs_in_longest_mapping_region
@@ -119,14 +119,9 @@ def main(Homozygous_Parental_file, HA_SNPs_file, ofile):
 def initiate_plot(ofile):
     """Set up plotting parameters."""
 
-    # compare:
-    # http://blog.marmakoide.org/?p=94 and
-    # http://matplotlib.org/users/gridspec.html
-
-    # http://stackoverflow.com/questions/33995707/attributeerror-unknown-property-color-cycle
     plt.style.use('ggplot')
     mapping_plot_pdf = PdfPages(ofile)
-    # http://matplotlib.org/api/figure_api.html
+    
     fig = plt.figure(figsize=(11.69, 8.27), dpi=150)  
     return mapping_plot_pdf, fig
 
@@ -134,19 +129,14 @@ def initiate_plot(ofile):
 def finish_plot(mapping_plot_pdf=None, fig=None):
     """Finalize the plotting parameters and save."""
 
-    # http://stackoverflow.com/questions/19273040/rotating-axis-text-for-each-subplot
     for ax in fig.axes:
         plt.sca(ax)
         plt.xticks(rotation=25)
     
     plt.tight_layout(pad=.4, h_pad=.4, w_pad=.4)
-    # Adjust space between plots
     plt.subplots_adjust(wspace=.3, hspace=.7)
-    #plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
 
-    #http://stackoverflow.com/questions/6541123/improve-subplot-size-spacing-with-many-subplots-in-matplotlib
     mapping_plot_pdf.savefig(fig, pad_inches=.5, orientation='landscape')
-    # Write the PDF document to the disk
     mapping_plot_pdf.close()
 
 
@@ -165,6 +155,7 @@ def parse_mapping_strain_positions_df(mapping_strain_positions_df = None):
     ref_allele_count = pd.to_numeric(vcf_allele_freq_data.str.split(',').str[0])
     alt_allele_count = pd.to_numeric(vcf_allele_freq_data.str.split(',').str[1])
     read_depth = vcf_read_group_data.str[2]
+
     # ToDo: Change to ratio of alt/read depth (only for cases where
     # read depth = alt+ref to account for sequencing error/noise).
     # For now, just use alt/read depth.
@@ -196,8 +187,14 @@ def sliding_window(seq, window_size=10):
         yield result
 
 
-def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions_df, current_chrom):
-    """ Calculates the longest region of parental linkage via analysis of SNP ratios within a sliding window """
+def longest_region_of_parental_linkage_via_mapping_snps(
+    mapping_strain_positions_df, current_chrom
+    ):
+    """ 
+    Calculates the longest region of parental linkage via analysis of SNP 
+    ratios within a sliding window 
+    """
+
     # either 0 ratio positions or cases where at least 2 alternate reads
     mapping_strain_positions_df = mapping_strain_positions_df[
         (mapping_strain_positions_df.alt_allele_count == 0)
@@ -212,13 +209,12 @@ def longest_region_of_parental_linkage_via_mapping_snps(mapping_strain_positions
 
     # Convert DF to dictionary and find max consecutive interval
     POS_ratio_DF = mapping_strain_positions_df[['POS','ratio']]
-    # Build the dict
     POS_ratio_dict = dict(zip(POS_ratio_DF.POS, POS_ratio_DF.ratio))
-    # Sort the dict
     POS_ratio_dict_sorted = OrderedDict(sorted(POS_ratio_dict.items()))
     
     current_run_windows_start = 0
     current_run_windows_end = 0
+
     # the first/leftmost position in the window that begins the longest
     # interval below threshold
     max_window_start = 0
@@ -284,7 +280,10 @@ def parental_strain_variants_in_longest_non_crossing_strain_subsegment(
     start_largest_consecutive=None, end_largest_consecutive=None,
     current_chrom=None
     ):
-    """Identifies parental strain variants in the longest region devoid of crossing strain snps """    
+    """
+    Identifies parental strain variants in the longest region devoid of crossing
+    strain snps 
+    """    
     
     # Split SAMPLE Column with each field as a new column
     parental_homozygous_snps_read_group_data = \
@@ -300,7 +299,8 @@ def parental_strain_variants_in_longest_non_crossing_strain_subsegment(
     parental_homozygous_read_depth = \
         parental_homozygous_snps_read_group_data.str[2]
 
-    # Ratio of alt/read depth (only for cases where read depth = alt+ref). For now, just use alt/read depth
+    # Ratio of alt/read depth (only for cases where read depth = alt+ref). 
+    # For now, just use alt/read depth
     parental_homozygous_ratio = (
         pd.to_numeric(parental_homozygous_alt_allele_count)
         /pd.to_numeric(parental_homozygous_read_depth)
@@ -327,9 +327,8 @@ def parental_strain_variants_in_longest_non_crossing_strain_subsegment(
         'EMS', 'CHROM', 'POS', 'ratio'
         ]
 
-    # Get the linked chromosome.
-    # DIFFERENT CHROMOSOME NAMING CONVENTION IN THE HOMOZYGOUS PARENTAL
-    # VARIANTS FILE
+    # Get the linked chromosome. Currently there's a different chromosome
+    # naming convention in the homozygous parental variants file.
     parental_homozygous_linked_chromosome = \
         parental_homozygous_snps_df_ems_depth_calc[
             (parental_homozygous_snps_df_ems_depth_calc.CHROM==current_chrom)
@@ -401,15 +400,16 @@ def kde_output_plot(
     chrom, parental_strain_SNPs_in_longest_mapping_region,
     kde_max_x, kde_max_y
     ):  
-    """ Calculates kernel density estimation on linked parental variants in cases where have at least 3 variants. """
+    """ 
+    Calculates kernel density estimation on linked parental variants in
+    cases where have at least 3 variants. 
+    """
     ax, _ = set_plot_axes(chrom, is_minimal_snp_plot=False)
   
     plt.plot(xgrid, probablity_density_function, 'r-')
     plt.title(chrom)
         
     # Use/Remove scientific notation
-    # http://stackoverflow.com/questions/28371674/prevent-scientific-notation-in-matplotlib-pyplot
-    # http://matplotlib.org/api/axes_api.html#matplotlib.axes.Axes.ticklabel_format
     # plt.ticklabel_format(style='plain', axis='y')
     plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
@@ -418,7 +418,6 @@ def kde_output_plot(
         tkr.FuncFormatter(lambda x, p: format(int(x), ','))
         )
     # Annotate the predicted position
-    # http://matplotlib.org/examples/pylab_examples/annotation_demo.html
     ax.annotate(
         ("{:,}".format(round(kde_max_x))),
         (kde_max_x, kde_max_y),
@@ -429,7 +428,7 @@ def kde_output_plot(
         verticalalignment='bottom'
         )      
     
-    # ToDO: remove?
+    # ToDo: remove?
     # parental_strain_SNPs_in_longest_mapping_region_EMS = parental_homozygous_linked_chromosome[(parental_homozygous_linked_chromosome.POS > start_largest_consecutive) & (parental_homozygous_linked_chromosome.POS < end_largest_consecutive) & (parental_homozygous_linked_chromosome.EMS =="yes")]
     parental_strain_SNPs_in_longest_mapping_region_EMS = \
         parental_strain_SNPs_in_longest_mapping_region[
@@ -437,8 +436,6 @@ def kde_output_plot(
             ]
     
     # Plot the scatter points on X axis
-    # http://stackoverflow.com/questions/7352220/how-to-plot-1-d-data-at-given-y-value-with-pylab
-    # http://matplotlib.org/api/markers_api.html -- point style reference
     plt.plot(
         parental_strain_SNPs_in_longest_mapping_region.POS,
         np.zeros_like(parental_strain_SNPs_in_longest_mapping_region.POS)+0,
@@ -467,9 +464,12 @@ def kde_output_plot(
 def minimal_snp_plot(
     chrom, parental_strain_SNPs_in_longest_mapping_region=None
     ):
-    """ For cases where no parental variants in a region of linkage (defined as region devoid of crossing strain variants) or 1-2 linked parental variants, 
-        simply plot the positions without kde b/c kde on 1-2 points is meaningless.
-        """
+    """ 
+    For cases where no parental variants in a region of linkage (defined as
+    region devoid of crossing strain variants) or < 3 linked parental variants, 
+    plot the positions without KDE b/c KDE on < 3 points doesn't work.
+    """
+
     # Debug
     print("Plot performed on these SNPs: \n",
           parental_strain_SNPs_in_longest_mapping_region)
@@ -504,16 +504,16 @@ def minimal_snp_plot(
              0, 1]
             )    
 
-    # Identify the subset of EMS snps
+    # Identify the subset of EMS SNPs
     parental_strain_SNPs_in_longest_mapping_region_EMS = \
         parental_strain_SNPs_in_longest_mapping_region[
             (parental_strain_SNPs_in_longest_mapping_region.EMS =="yes")
             ]
 
-    # Plot 1-2 variants without kde
+    # Plot 1-2 variants without KDE
     if len(parental_strain_SNPs_in_longest_mapping_region.index) > 0:
         for positions in parental_strain_SNPs_in_longest_mapping_region:
-            # plot non-ems variants
+            # plot non-EMS variants
             plt.plot(
                 parental_strain_SNPs_in_longest_mapping_region.POS,
                 np.zeros_like(
@@ -536,9 +536,11 @@ def minimal_snp_plot(
 def kernel_density_estimation(
     parental_strain_SNPs_in_longest_mapping_region=None, chrom=None
     ):
-    """ Perform kernel density estimation on a given set of linked parental variants """
+    """ 
+    Perform kernel density estimation on a given set of linked parental 
+    variants. scipy.stats module has automatic bandwidth determination: 
+    """
 
-    # minimum data points required for KDE: http://stats.stackexchange.com/questions/76948/what-is-the-minimum-number-of-data-points-required-for-kernel-density-estimation
     print("KDE performed on these SNPs: \n",
           parental_strain_SNPs_in_longest_mapping_region)
     kernel = kde.gaussian_kde(
@@ -550,39 +552,31 @@ def kernel_density_estimation(
         )
 
     probablity_density_function = kernel.evaluate(xgrid)
+
     # Find the maximum y value and its corresponding x value.
     max_y = max(probablity_density_function)
     max_x = xgrid[probablity_density_function.argmax()] 
+    # Print large numbers with commas
     print(
         "Predicted position of mutation: ",
         ("{:,}".format(round(max_x)))
-        ) # Print large numbers with commas
+        ) 
     return max_y, max_x, xgrid, probablity_density_function
 
 
 if __name__ == "__main__":
-    # hu80 (chrIII cic-1)
-    #HA_default = '/Users/gregory/cloudmap2/Galaxy114-[hu80HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
-    #Parental_default = '/Users/gregory/cloudmap2/Galaxy117-[hu80HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
-
-    # ot785 (chrIII lin-13)
-    HA_default = '/Users/gregory/cloudmap2/Galaxy45-[ot785HA_VariantsAtHighQualityHAPositions_MQ30_WS245_DP_0_BiallelicPositions_SNPsOnly].vcf'
-    Parental_default = '/Users/gregory/cloudmap2/Galaxy40-[ot785HA_WS245_Homozygous_variants_SubtractedHobertHawaiianHomozygousAndHeterozygous].vcf'
-
     parser = argparse.ArgumentParser(
         description='Map a causal variant and plot linkage evidence.'
     )
-    parser.add_argument('Homozygous_Parental_file', nargs='?',
-                        metavar='<non mapping strain vcf>',
-                        default=Parental_default,
+    parser.add_argument('Homozygous_Bulked_Segregant_SNPs_w_Mapping_Strain_SNPs_Subtracted_file', nargs='?',
+                        metavar='<Homozygous Bulked Segregant SNPs with mapping strain SNPs subtracted vcf>',
                         help='VCF file with SNPs that appear homozygous '
                              'in the bulked segregants sample, but are '
                              'NOT found in the mapping strain.')
-    parser.add_argument('HA_SNPs_file', nargs='?',
-                        metavar='<mapping strain vcf>',
-                        default=HA_default,
-                        help='VCF file with SNPs found in the mapping strain '
-                             'AND in the bulked segregants sample.')
+    parser.add_argument('Bulked_Segregant_Allele_Ratios_at_Mapping_Strain_SNP_Positions_file', nargs='?',
+                        metavar='<Bulked Segregant Allele Ratios at Mapping Strain SNP Positions vcf>',
+                        help='VCF file with allele ratios found in the bulked segregants sample '
+                             'at mapping strain SNP positions only.')
     parser.add_argument('-o', '--ofile', required=True,
                         help="output file for the plot")
     args = vars(parser.parse_args())
