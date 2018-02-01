@@ -1,9 +1,10 @@
 ###############################################################################
 # CloudMap2 
 # 
-# Bulk segregant mapping tool that generates maps of linked chromosomal regions 
-# with color-coded SNPs of interest. Also uses kernel density estimation on
-# linked parental SNPs to predict position of most likely causal SNP(s).
+# Bulked segregant mapping tool that generates maps of linked chromosomal 
+# regions with color-coded SNPs of interest. Also uses kernel density 
+# estimation on linked parental SNPs to predict position of most likely causal 
+# SNP(s). 
 ###############################################################################
 
 import argparse
